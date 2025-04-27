@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { AlertCircle, CheckCircle, Camera, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Camera, Loader2, Shield } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
@@ -14,7 +14,7 @@ const FaceVerification = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [verificationStage, setVerificationStage] = useState<
-    "initializing" | "positioning" | "processing" | "success" | "blocked" | "failed"
+    "initializing" | "positioning" | "liveness" | "processing" | "success" | "blocked" | "failed"
   >("initializing");
   const [facePosStatus, setFacePosStatus] = useState<
     "too-far" | "too-close" | "good" | "not-found"
@@ -22,6 +22,11 @@ const FaceVerification = () => {
   const [progressValue, setProgressValue] = useState(0);
   const [message, setMessage] = useState("Инициализация камеры...");
   const [isNewUser] = useState(location.state?.isNewUser ?? true);
+  const [livenessAction, setLivenessAction] = useState<
+    "blink" | "smile" | "turn-left" | "turn-right" | "nod" | "completed"
+  >("blink");
+  const [livenessProgress, setLivenessProgress] = useState(0);
+  const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
 
   // Запрос доступа к камере
   useEffect(() => {
@@ -74,7 +79,9 @@ const FaceVerification = () => {
         
         if (status === "good") {
           setTimeout(() => {
-            startProcessing();
+            captureFrame();
+            setVerificationStage("liveness");
+            setMessage("Проверка на живое лицо. Пожалуйста, моргните");
           }, 1500);
         }
         
@@ -100,11 +107,52 @@ const FaceVerification = () => {
     };
   }, [verificationStage]);
 
-  const startProcessing = () => {
-    setVerificationStage("processing");
-    setMessage("Выполняется биометрическая верификация...");
+  // Имитация проверки на живое лицо (liveness detection)
+  useEffect(() => {
+    let interval: number | undefined;
     
-    // Захват кадра и имитация анализа
+    if (verificationStage === "liveness") {
+      interval = window.setInterval(() => {
+        if (livenessAction === "completed") {
+          clearInterval(interval);
+          return;
+        }
+        
+        // Имитация распознавания действия пользователя
+        const randomSuccess = Math.random() > 0.3; // 70% вероятность успеха
+        
+        if (randomSuccess) {
+          setLivenessProgress(prev => {
+            const newProgress = prev + 33;
+            if (newProgress >= 100) {
+              captureFrame();
+              startProcessing();
+              return 100;
+            }
+            
+            // Переход к следующему действию
+            if (newProgress >= 33 && newProgress < 66) {
+              captureFrame();
+              setLivenessAction("smile");
+              setMessage("Отлично! Теперь улыбнитесь");
+            } else if (newProgress >= 66 && newProgress < 100) {
+              captureFrame();
+              setLivenessAction("turn-right");
+              setMessage("Хорошо! Поверните голову вправо");
+            }
+            
+            return newProgress;
+          });
+        }
+      }, 2000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [verificationStage, livenessAction]);
+
+  const captureFrame = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -117,8 +165,21 @@ const FaceVerification = () => {
         
         // Рисуем текущий кадр видео на canvas
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Получаем изображение в формате base64
+        const imageData = canvas.toDataURL('image/jpeg');
+        setCapturedFrames(prev => [...prev, imageData]);
       }
     }
+  };
+
+  const startProcessing = () => {
+    setLivenessAction("completed");
+    setVerificationStage("processing");
+    setMessage("Выполняется биометрическая верификация...");
+    
+    // Захват финального кадра
+    captureFrame();
     
     // Имитация процесса верификации с индикатором прогресса
     let progress = 0;
@@ -165,6 +226,55 @@ const FaceVerification = () => {
     }
   };
 
+  const renderLivenessCheck = () => {
+    return (
+      <div className="flex flex-col items-center justify-center">
+        <div className="w-full max-w-md mb-6">
+          <h3 className="text-lg font-medium mb-2">Проверка на живое лицо</h3>
+          <Progress value={livenessProgress} className="h-2 mb-2" />
+          <p className="text-sm text-gray-500">
+            {livenessAction === "blink" && "Пожалуйста, моргните несколько раз"}
+            {livenessAction === "smile" && "Пожалуйста, улыбнитесь"}
+            {livenessAction === "turn-right" && "Поверните голову вправо"}
+            {livenessAction === "turn-left" && "Поверните голову влево"}
+            {livenessAction === "nod" && "Кивните головой"}
+            {livenessAction === "completed" && "Проверка завершена!"}
+          </p>
+        </div>
+        
+        <div className="relative mb-4">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            {livenessAction === "blink" && (
+              <div className="flex flex-col items-center">
+                <span className="text-sm bg-black/70 text-white px-2 py-1 rounded mb-2">Моргните</span>
+                <div className="w-24 h-10 border-2 border-yellow-500 rounded-md opacity-80" />
+              </div>
+            )}
+            {livenessAction === "smile" && (
+              <div className="flex flex-col items-center">
+                <span className="text-sm bg-black/70 text-white px-2 py-1 rounded mb-2">Улыбнитесь</span>
+                <div className="w-24 h-10 border-2 border-yellow-500 rounded-full opacity-80 mt-16" />
+              </div>
+            )}
+            {livenessAction === "turn-right" && (
+              <div className="flex flex-col items-center">
+                <span className="text-sm bg-black/70 text-white px-2 py-1 rounded mb-2">Вправо</span>
+                <div className="flex items-center">
+                  <div className="w-32 h-32 border-2 border-yellow-500 rounded-full opacity-80" />
+                  <div className="w-8 h-8 bg-yellow-500/50 rounded-full ml-4 animate-pulse" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        <p className="text-sm text-gray-500 mt-2">
+          Выполните действие, которое запрашивает система
+        </p>
+      </div>
+    );
+  };
+
   const renderVerificationStatus = () => {
     switch (verificationStage) {
       case "initializing":
@@ -188,6 +298,9 @@ const FaceVerification = () => {
             </div>
           </div>
         );
+        
+      case "liveness":
+        return renderLivenessCheck();
         
       case "processing":
         return (
@@ -310,12 +423,13 @@ const FaceVerification = () => {
           {verificationStage !== "blocked" && (
             <div className="mt-8 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-start">
-                <Camera className="text-avito-blue mr-3 mt-1" />
+                <Shield className="text-avito-blue mr-3 mt-1" />
                 <div>
                   <h3 className="font-medium mb-1">Безопасность биометрической верификации</h3>
                   <p className="text-sm text-gray-600">
-                    Система биометрической верификации защищает ваш аккаунт от несанкционированного доступа.
-                    Все биометрические данные хранятся в зашифрованном виде и используются только для проверки личности.
+                    Система биометрической верификации с проверкой на живое лицо (Liveness Detection) защищает от использования фотографий и 
+                    видеозаписей для обхода системы. Все действия выполняются в режиме реального времени для подтверждения, что перед камерой 
+                    находится реальный человек, а не его изображение.
                   </p>
                 </div>
               </div>
